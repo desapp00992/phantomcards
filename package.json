@@ -1,0 +1,17 @@
+{
+  "name": "phantom-cards",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "reset": "node server.js --reset",
+    "test": "node --test test/*.test.js",
+    "db:migrate": "node scripts/run-migrations.js",
+    "db:import": "node scripts/migrate-json-to-postgres.js",
+    "db:check": "node scripts/check-database.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}
