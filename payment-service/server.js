@@ -1,6 +1,7 @@
 const http=require('node:http'),crypto=require('node:crypto'),fs=require('node:fs'),path=require('node:path'),{Readable}=require('node:stream'),{PAYSTACK_PAYMENT_EMAILS,isAllowedPaystackPaymentEmail}=require('../payment-config'),ROOT=__dirname;
 const { createBundleRoute, handleBundleWebhook, withBundleState } = require('./bundle-service');
 const { createJsonStateStore } = require('../storage');
+let schemaReady = Promise.resolve();
 const bundleRoute = createBundleRoute({
   getBase: () => (process.env.SITE_B_BASE_URL || `http://127.0.0.1:${process.env.PORT || 4000}`).replace(/\/$/, ''),
   pay: (...args) => pay(...args)
@@ -19,6 +20,7 @@ function servePublicSite(r,pathname){
 const createHttpServer=http.createServer;
 http.createServer=(handler)=>createHttpServer(async(req,res)=>{
   try {
+  await schemaReady;
   return await stateStore.withRequest(async()=>{
   const pathname=new URL(req.url,'http://localhost').pathname;
   if(req.method==='POST'&&pathname==='/api/v1/internal/admin/reconcile'){
@@ -58,6 +60,11 @@ http.createServer=(handler)=>createHttpServer(async(req,res)=>{
 for(const l of(fs.existsSync(path.join(ROOT,'.env'))?fs.readFileSync(path.join(ROOT,'.env'),'utf8'):'').split(/\r?\n/)){const i=l.indexOf('=');if(i>0&&!l.trim().startsWith('#')&&process.env[l.slice(0,i).trim()]===undefined)process.env[l.slice(0,i).trim()]=l.slice(i+1).trim().replace(/^['"]|['"]$/g,'')}
 const PORT=+process.env.PORT||4000,BASE=(process.env.SITE_B_BASE_URL||`http://127.0.0.1:${PORT}`).replace(/\/$/,''),A=(process.env.SITE_A_BASE_URL||'').replace(/\/$/,''),AB=process.env.SITE_A_TO_SITE_B_SECRET||'',BA=process.env.SITE_B_TO_SITE_A_SECRET||'',KEY=process.env.PAYSTACK_SECRET_KEY||'',API=(process.env.PAYSTACK_API_BASE_URL||'https://api.paystack.co').replace(/\/$/,''),DATA=process.env.PAYMENT_DATA_FILE||path.join(ROOT,'data/payment-service.json'),PUBLIC_ROOT=path.join(ROOT,'public');
 const stateStore=createJsonStateStore({namespace:process.env.DATABASE_NAMESPACE||'site_b',filePath:DATA,initialState:()=>({transactions:[],webhookEvents:[],requestIds:[]}),normalize:value=>({transactions:Array.isArray(value.transactions)?value.transactions:[],webhookEvents:Array.isArray(value.webhookEvents)?value.webhookEvents:[],requestIds:Array.isArray(value.requestIds)?value.requestIds:[]})});
+schemaReady = stateStore.ensureSchema();
+schemaReady.catch(error => {
+  console.error('[startup:error] '+error.message);
+  process.exitCode = 1;
+});
 const now=()=>new Date().toISOString(),id=p=>`${p}_${crypto.randomBytes(12).toString('hex')}`,eq=(a,b)=>{const x=Buffer.from(String(a)),y=Buffer.from(String(b));return x.length===y.length&&crypto.timingSafeEqual(x,y)},read=async q=>{const c=[];for await(const x of q)c.push(x);return Buffer.concat(c)};
 async function load(){return stateStore.load()} async function save(d){return stateStore.save(d)} function out(r,s,x){r.writeHead(s,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});r.end(JSON.stringify(x))}
 function signed(s,p,r=id('req')){const t=String(Date.now()),b=JSON.stringify(p);return{authorization:`Bearer ${s}`,'x-request-id':r,'x-timestamp':t,'x-sitea-signature':crypto.createHmac('sha256',s).update(`${t}.${r}.${b}`).digest('hex')}} function auth(q,b,s){const r=String(q.headers['x-request-id']||''),t=String(q.headers['x-timestamp']||''),g=String(q.headers['x-sitea-signature']||''),bearer=String(q.headers.authorization||'').replace(/^Bearer\s+/i,'');return !!(s&&eq(bearer,s)&&/^[A-Za-z0-9_-]{8,200}$/.test(r)&&/^\d{13}$/.test(t)&&/^[a-f0-9]{64}$/i.test(g)&&Math.abs(Date.now()- +t)<=300000&&eq(g,crypto.createHmac('sha256',s).update(`${t}.${r}.${b}`).digest('hex')))}

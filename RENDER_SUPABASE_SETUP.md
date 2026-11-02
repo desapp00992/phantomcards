@@ -69,8 +69,14 @@ If the importer reports a duplicate, missing relationship, missing KYC file, or 
 
 Create a Render Web Service from the repository root:
 
-- Build command: `npm install`
+- Build command: `npm install && npm run db:migrate`
 - Start command: `npm start`
+
+The migration command is safe to run on every deploy. It creates the shared
+`app_state` and `app_blobs` tables if they do not exist; it does not create a
+fake Site A account or overwrite an existing namespace. The service also checks
+the schema during startup, so a missed build migration is handled before any
+request is served.
 
 Add these environment variables in Render. Enter secrets through Render’s environment-variable UI; do not edit source files.
 
@@ -90,14 +96,37 @@ DATABASE_POOL_MAX=4
 DATABASE_NAMESPACE=site_a
 ```
 
+After setting `DATABASE_URL`, import Site A’s existing state from a machine that
+has the repository’s local `data/` directory. This is required even after the
+schema migration, because the application intentionally refuses to invent a
+missing `site_a` namespace:
+
+```bash
+export DATABASE_URL='your-supabase-transaction-pooler-url'
+export DATABASE_SSL=true
+npm install
+npm run db:migrate
+node scripts/migrate-json-to-postgres.js \
+  --source ./data/phantom-cards.json \
+  --namespace site_a \
+  --blobs ./data/kyc-documents
+npm run db:check
+```
+
+If the importer reports that `site_a` already contains different data, stop;
+do not force it. That means the namespace has already been used and needs a
+backup/reconciliation decision before deployment.
+
 Render supplies `PORT` automatically. Do not set `PAYSTACK_SECRET_KEY` on Site A. Do not set `PHANTOM_DATA_FILE` or `KYC_DOCUMENTS_DIR` for the deployed database-backed service.
 
 ## 4. Render Site B
 
-Create a second Render Web Service from the same repository. The service can use `payment-service` as its root directory, because that directory already resolves the shared root `storage.js` and `payment-config.js` files.
+Create a second Render Web Service from the same repository. Use the repository
+root as the service’s Root Directory so the shared `storage.js`,
+`payment-config.js`, and root `node_modules` are available to Site B.
 
-- Build command: `npm install`
-- Start command: `npm start`
+- Build command: `npm install && npm run db:migrate`
+- Start command: `node payment-service/server.js`
 
 Add:
 

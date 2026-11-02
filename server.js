@@ -1938,6 +1938,11 @@ async function route(req, res) {
   }
 }
 async function startServer() {
+  // Render can start the service even when its build command did not run the
+  // database migration. Creating only the schema is safe and non-destructive;
+  // the required namespace row is still imported separately and load() will
+  // fail closed if it is missing.
+  await stateStore.ensureSchema();
   if (process.argv.includes('--reset')) {
     if (stateStore.databaseEnabled) throw new Error('--reset is disabled when DATABASE_URL is configured. Use the non-destructive import/backup workflow.');
     await stateStore.withRequest(() => save(blankDb()));

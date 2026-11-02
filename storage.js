@@ -7,6 +7,8 @@ function configuredDatabaseUrl() {
   return String(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || '').trim();
 }
 
+const SCHEMA_FILE = path.join(__dirname, 'migrations', '001_app_state.sql');
+
 function safeFilePath(file) {
   return path.resolve(String(file));
 }
@@ -177,6 +179,12 @@ function createJsonStateStore({
     if (pool) await pool.end();
   }
 
+  async function ensureSchema() {
+    if (!databaseEnabled) return;
+    const schema = fs.readFileSync(SCHEMA_FILE, 'utf8');
+    await getPool().query(schema);
+  }
+
   return {
     databaseEnabled,
     namespace,
@@ -188,6 +196,7 @@ function createJsonStateStore({
     putBlob,
     readBlob,
     close,
+    ensureSchema,
     getPool,
   };
 }
